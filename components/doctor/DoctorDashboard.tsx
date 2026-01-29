@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+import { api } from '../../services/api';
 import { 
   LayoutGrid, 
   Calendar, 
@@ -32,17 +33,8 @@ import {
   Check
 } from 'lucide-react';
 import { 
-  DOCTOR_STATS, 
-  TODAY_SCHEDULE, 
-  PENDING_REQUESTS, 
-  HISTORY_LOG, 
-  ALL_PATIENTS, 
   Appointment, 
-  Patient, 
-  MOCK_PATIENT_HISTORY, 
-  MOCK_PATIENT_DOCUMENTS,
-  MOCK_CHAT_THREADS,
-  MOCK_CHAT_HISTORY,
+  Patient,
   ChatThread,
   ChatMessage
 } from './doctor-data';
@@ -56,11 +48,20 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
   const [appointmentTab, setAppointmentTab] = useState<'upcoming' | 'pending' | 'history'>('upcoming');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
+  // API Data States
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+  const [chatHistory, setChatHistory] = useState<{ [key: string]: ChatMessage[] }>({});
+  const [isLoading, setIsLoading] = useState(false);
+  
   // Patient View State
   const [patientFilter, setPatientFilter] = useState<'All' | 'Active' | 'Recovered' | 'Critical'>('All');
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Appointment | Patient | null>(null);
   const [profileTab, setProfileTab] = useState<'overview' | 'history' | 'documents'>('overview');
+  const [patientHistory, setPatientHistory] = useState<any[]>([]);
+  const [patientDocuments, setPatientDocuments] = useState<any[]>([]);
 
   // Messages View State
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -81,7 +82,38 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
     if (selectedChatId && chatEndRef.current) {
         chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [selectedChatId, MOCK_CHAT_HISTORY[selectedChatId || '']]);
+  }, [selectedChatId, chatHistory[selectedChatId || '']]);
+
+  // Load data from API on mount
+  useEffect(() => {
+    const loadDoctorData = async () => {
+      try {
+        setIsLoading(true);
+        // Get doctor ID from localStorage or user session
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const doctorId = user._id || user.id;
+        
+        // Load appointments and patients from API
+        const [aptsResponse, patientsResponse] = await Promise.all([
+          api.appointments.getMyAppointments(),
+          doctorId ? api.doctors.getPatients(doctorId) : Promise.resolve({ data: [] })
+        ]);
+        
+        setAppointments(aptsResponse.data || []);
+        setPatients(patientsResponse.data || []);
+        
+        // Load chat threads
+        const chatsResponse = await api.chat.getConversations();
+        setChatThreads(chatsResponse.data || []);
+      } catch (error) {
+        console.error('Error loading doctor data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadDoctorData();
+  }, []);
 
   const handleOpenPatientProfile = (data: Appointment | Patient) => {
     setSelectedPatient(data);
@@ -92,10 +124,9 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
     setSelectedPatient(null);
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
       if (!messageInput.trim() || !selectedChatId) return;
       
-      // Mock sending (In a real app, update state/backend)
       const newMessage: ChatMessage = {
           id: `new_${Date.now()}`,
           sender: 'doctor',
@@ -105,17 +136,20 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
           status: 'sent'
       };
       
-      // For demo, we just push to the existing mock reference (not ideal for real React apps but works for this demo scope)
-      if (MOCK_CHAT_HISTORY[selectedChatId]) {
-          MOCK_CHAT_HISTORY[selectedChatId].push(newMessage);
-      } else {
-          MOCK_CHAT_HISTORY[selectedChatId] = [newMessage];
-      }
+      // Update local state
+      setChatHistory(prev => ({
+        ...prev,
+        [selectedChatId]: [...(prev[selectedChatId] || []), newMessage]
+      }));
       
       setMessageInput('');
-      // Force re-render not needed if we were using real state for history, 
-      // but here we might need a trigger or just rely on React's nature if we deep cloned.
-      // For simplicity in this demo, let's assume it updates or the user sees it on next interaction.
+      
+      // Send to API
+      try {
+        await api.chat.sendMessage(selectedChatId, messageInput, 'text');
+      } catch (error) {
+        console.error('Error sending message:', error);
+      }
   };
 
   // Helper to get normalized data from either Appointment or Patient type
@@ -153,7 +187,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  const filteredPatients = ALL_PATIENTS.filter(p => {
+  const filteredPatients = patients.filter(p => {
     const matchesFilter = patientFilter === 'All' || p.status === patientFilter;
     const matchesSearch = p.name.toLowerCase().includes(patientSearch.toLowerCase()) || 
                           p.patientId.toLowerCase().includes(patientSearch.toLowerCase()) ||
@@ -161,7 +195,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
     return matchesFilter && matchesSearch;
   });
 
-  const filteredChats = MOCK_CHAT_THREADS.filter(c => 
+  const filteredChats = chatThreads.filter(c => 
       c.patientName.toLowerCase().includes(chatSearch.toLowerCase())
   );
 
@@ -277,7 +311,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
                         <div className="flex items-center justify-between mb-6">
                             <h1 className="text-2xl font-bold text-slate-900">Messages</h1>
                             <div className="flex items-center gap-2">
-                                <span className="bg-brand-50 text-brand-700 text-xs font-bold px-2.5 py-1 rounded-full">{MOCK_CHAT_THREADS.reduce((acc, t) => acc + t.unreadCount, 0)} New</span>
+                                <span className="bg-brand-50 text-brand-700 text-xs font-bold px-2.5 py-1 rounded-full">{chatThreads.reduce((acc, t) => acc + t.unreadCount, 0)} New</span>
                                 <button className="p-2 text-slate-400 hover:bg-slate-50 rounded-full transition-colors"><MoreVertical size={20} /></button>
                             </div>
                         </div>
@@ -341,7 +375,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
                                     </button>
                                     
                                     {(() => {
-                                        const thread = MOCK_CHAT_THREADS.find(t => t.id === selectedChatId);
+                                        const thread = chatThreads.find(t => t.id === selectedChatId);
                                         return (
                                             <>
                                                 <div className="relative">
@@ -379,7 +413,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
                                 <div className="flex justify-center mb-4">
                                     <span className="bg-slate-100 text-slate-400 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Today</span>
                                 </div>
-                                {MOCK_CHAT_HISTORY[selectedChatId]?.map((msg) => (
+                                {chatHistory[selectedChatId]?.map((msg) => (
                                     <div key={msg.id} className={`flex ${msg.sender === 'doctor' ? 'justify-end' : 'justify-start'}`}>
                                         <div className={`max-w-[75%] md:max-w-[60%] flex flex-col ${msg.sender === 'doctor' ? 'items-end' : 'items-start'}`}>
                                             <div 
@@ -492,7 +526,12 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
             {/* DASHBOARD STATS */}
             {activeTab === 'dashboard' && (
                 <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
-                    {DOCTOR_STATS.map((stat, idx) => (
+                    {[
+                      { label: 'Total Patients', value: patients.length.toString(), icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
+                      { label: 'Appointments', value: appointments.length.toString(), icon: Calendar, color: 'text-purple-600', bg: 'bg-purple-50' },
+                      { label: 'Consultations', value: (appointments.filter(a => a.type === 'video').length).toString(), icon: MessageSquare, color: 'text-green-600', bg: 'bg-green-50' },
+                      { label: 'Messages', value: chatThreads.reduce((acc, t) => acc + t.unreadCount, 0).toString(), icon: Bell, color: 'text-amber-600', bg: 'bg-amber-50' },
+                    ].map((stat, idx) => (
                         <div key={idx} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg hover:shadow-brand-900/5 transition-all flex items-center justify-between group cursor-pointer">
                             <div>
                                 <p className="text-slate-500 font-medium text-sm mb-1">{stat.label}</p>
@@ -544,7 +583,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
 
                                 <div className="space-y-4">
                                     {/* RENDER LIST BASED ON TAB */}
-                                    {(activeTab === 'dashboard' || (activeTab === 'appointments' && appointmentTab === 'upcoming')) && TODAY_SCHEDULE.map((apt) => (
+                                    {(activeTab === 'dashboard' || (activeTab === 'appointments' && appointmentTab === 'upcoming')) && appointments.filter(a => a.status === 'Upcoming').map((apt) => (
                                         <div key={apt.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm hover:border-brand-200 transition-all flex flex-col md:flex-row md:items-center gap-6 group hover:shadow-md cursor-pointer" onClick={() => handleOpenPatientProfile(apt)}>
                                             <div className="flex items-center gap-6 flex-1">
                                                 <div className="text-center min-w-[60px]">
@@ -584,7 +623,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
                                     ))}
 
                                     {/* PENDING REQUESTS VIEW */}
-                                    {activeTab === 'appointments' && appointmentTab === 'pending' && PENDING_REQUESTS.map((req) => (
+                                    {activeTab === 'appointments' && appointmentTab === 'pending' && appointments.filter(a => a.status === 'Pending').map((req) => (
                                         <div key={req.id} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-brand-300 transition-all flex flex-col md:flex-row items-center gap-6 animate-fade-in-up">
                                             <div className="flex-1 flex items-center gap-4 w-full">
                                                     <img src={req.patientImage} className="w-14 h-14 rounded-2xl object-cover" alt={req.patientName} />
@@ -604,7 +643,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
                                     ))}
 
                                     {/* HISTORY VIEW */}
-                                    {activeTab === 'appointments' && appointmentTab === 'history' && HISTORY_LOG.map((hist) => (
+                                    {activeTab === 'appointments' && appointmentTab === 'history' && appointments.filter(a => a.status === 'Completed').map((hist) => (
                                         <div key={hist.id} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-6 opacity-80 hover:opacity-100 transition-opacity animate-fade-in-up">
                                             <div className="flex-1 flex items-center gap-4 w-full">
                                                     <img src={hist.patientImage} className="w-14 h-14 rounded-2xl object-cover grayscale" alt={hist.patientName} />
@@ -632,7 +671,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
                     <div>
                         <h3 className="text-xl font-bold text-slate-900 mb-6">Pending Requests</h3>
                         <div className="space-y-4">
-                            {PENDING_REQUESTS.map((req) => (
+                            {appointments.filter(a => a.status === 'Pending').map((req) => (
                                 <div key={req.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all">
                                     <div className="flex items-start gap-4 mb-6">
                                         <img src={req.patientImage} alt={req.patientName} className="w-12 h-12 rounded-full object-cover" />
@@ -903,7 +942,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
                        )}
                        {profileTab === 'history' && (
                            <div className="space-y-6 animate-fade-in">
-                               {MOCK_PATIENT_HISTORY.map((item, idx) => (
+                               {patientHistory.map((item, idx) => (
                                    <div key={item.id} className="relative pl-8 pb-8 border-l-2 border-slate-100 last:border-0 last:pb-0">
                                        <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-slate-200 border-2 border-white"></div>
                                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-brand-200 transition-colors">
@@ -925,7 +964,7 @@ const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onLogout }) => {
                        )}
                        {profileTab === 'documents' && (
                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 animate-fade-in">
-                               {MOCK_PATIENT_DOCUMENTS.map((doc) => (
+                               {patientDocuments.map((doc) => (
                                    <div key={doc.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:border-brand-300 hover:shadow-md transition-all group cursor-pointer text-center flex flex-col items-center justify-center h-48">
                                        <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center mb-4 text-slate-400 group-hover:bg-brand-50 group-hover:text-brand-600 transition-colors">
                                             <FileText size={24} />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { api } from '../services/api';
 import { 
   LayoutGrid, 
   Stethoscope, 
@@ -58,226 +59,31 @@ interface PatientDashboardProps {
   onLogout: () => void;
 }
 
-// --- MOCK DATA ---
-
-interface Doctor {
+// --- TYPES ---
+interface ChatMessage {
   id: string;
-  name: string;
+  sender: 'user' | 'bot';
+  text?: string;
+  type: 'text' | 'doctor-recommendation';
+  doctors?: Doctor[];
+  categoryRecommended?: string;
+}
+
+interface Appointment {
+  id: string;
+  doctorId: string;
+  doctorName: string;
+  doctorImage: string;
   specialty: string;
   hospital: string;
-  rating: number;
-  reviews: number;
-  experience: string;
-  image: string;
-  nextAvailable: string;
-  price: number;
-  location: string;
-  distance: string;
-  travelTime: string;
+  date: string;
+  time: string;
+  type: 'video' | 'clinic';
+  status: 'Upcoming' | 'Completed';
+  travelTime?: string;
 }
 
-const ALL_DOCTORS: Doctor[] = [
-  { id: 'd1', name: 'Dr. Anjali Desai', specialty: 'General Physician', hospital: 'Apollo Hospital', rating: 4.8, reviews: 124, experience: '12 Years', image: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=2070&auto=format&fit=crop', nextAvailable: 'Today, 4:00 PM', price: 800, location: 'Indiranagar, Bangalore', distance: '2.4 km', travelTime: '12 mins' },
-  { id: 'd2', name: 'Dr. Robert Smith', specialty: 'General Physician', hospital: 'City Clinic', rating: 4.6, reviews: 89, experience: '8 Years', image: 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?q=80&w=2070&auto=format&fit=crop', nextAvailable: 'Tomorrow, 10:00 AM', price: 600, location: 'Koramangala, Bangalore', distance: '5.1 km', travelTime: '25 mins' },
-  { id: 'd3', name: 'Dr. Susan Lee', specialty: 'Dentist', hospital: 'Smile Care', rating: 4.9, reviews: 210, experience: '15 Years', image: 'https://images.unsplash.com/photo-1594824476967-48c8b964273f?q=80&w=1974&auto=format&fit=crop', nextAvailable: 'Today, 2:30 PM', price: 1200, location: 'Whitefield, Bangalore', distance: '12 km', travelTime: '45 mins' },
-  { id: 'd4', name: 'Dr. James Wilson', specialty: 'Cardiologist', hospital: 'Heart Institute', rating: 5.0, reviews: 305, experience: '20 Years', image: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?q=80&w=1964&auto=format&fit=crop', nextAvailable: 'Fri, 11:00 AM', price: 2500, location: 'Hebbal, Bangalore', distance: '8.5 km', travelTime: '35 mins' },
-  { id: 'd5', name: 'Dr. Emily Chen', specialty: 'Neurologist', hospital: 'Neuro Care', rating: 4.8, reviews: 150, experience: '14 Years', image: 'https://images.unsplash.com/photo-1527613426441-4da17471b66d?q=80&w=2052&auto=format&fit=crop', nextAvailable: 'Mon, 09:00 AM', price: 2000, location: 'Jayanagar, Bangalore', distance: '6.2 km', travelTime: '28 mins' },
-  { id: 'd6', name: 'Dr. Michael Ross', specialty: 'Orthopedist', hospital: 'Ortho Plus', rating: 4.7, reviews: 98, experience: '10 Years', image: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?q=80&w=2070&auto=format&fit=crop', nextAvailable: 'Wed, 03:15 PM', price: 1500, location: 'MG Road, Bangalore', distance: '3.0 km', travelTime: '15 mins' },
-];
-
-const MOCK_DOCTORS: Record<string, Doctor[]> = {
-  'General Physician': ALL_DOCTORS.filter(d => d.specialty === 'General Physician'),
-  'Dentist': ALL_DOCTORS.filter(d => d.specialty === 'Dentist'),
-  'Cardiologist': ALL_DOCTORS.filter(d => d.specialty === 'Cardiologist'),
-  'Neurologist': ALL_DOCTORS.filter(d => d.specialty === 'Neurologist'),
-};
-
-const SYMPTOMS_LIST = [
-  { id: 'fever', label: 'Fever', icon: Thermometer, color: 'text-rose-500', bg: 'bg-rose-50', category: 'General Physician' },
-  { id: 'cold', label: 'Cold/Flu', icon: Snowflake, color: 'text-sky-500', bg: 'bg-sky-50', category: 'General Physician' },
-  { id: 'stomach', label: 'Stomach', icon: Zap, color: 'text-amber-500', bg: 'bg-amber-50', category: 'General Physician' },
-  { id: 'headache', label: 'Headache', icon: BrainCircuit, color: 'text-purple-500', bg: 'bg-purple-50', category: 'Neurologist' },
-  { id: 'dental', label: 'Dental', icon: Smile, color: 'text-teal-500', bg: 'bg-teal-50', category: 'Dentist' },
-  { id: 'eye', label: 'Eye Issue', icon: Eye, color: 'text-blue-500', bg: 'bg-blue-50', category: 'Ophthalmologist' },
-  { id: 'joint', label: 'Joint Pain', icon: Bone, color: 'text-slate-500', bg: 'bg-slate-100', category: 'Orthopedist' },
-  { id: 'heart', label: 'Heart Burn', icon: Heart, color: 'text-red-500', bg: 'bg-red-50', category: 'Cardiologist' },
-];
-
-const SPECIALTY_FILTERS = ['All', 'General Physician', 'Dentist', 'Cardiologist', 'Neurologist', 'Orthopedist', 'Ophthalmologist'];
-
-// --- LAB TESTS MOCK DATA ---
-interface LabTest {
-  id: string;
-  title: string;
-  type: 'Package' | 'Test';
-  testCount: number;
-  tags?: string[];
-  price: number;
-  originalPrice: number;
-  discount: number;
-  tat: string; // Turn Around Time
-  category: string;
-  image: string;
-  description: string;
-  testsIncluded: string[];
-  preparation: string[];
-  location: string;
-}
-
-const LAB_TESTS: LabTest[] = [
-  { 
-    id: 'lt1', 
-    title: 'Apollo Superior Full Body Checkup', 
-    type: 'Package', 
-    testCount: 89, 
-    tags: ['Includes FREE Vitamin D Test'], 
-    price: 3249, 
-    originalPrice: 9283, 
-    discount: 65, 
-    tat: '24 hrs', 
-    category: 'Full Body', 
-    image: 'https://images.unsplash.com/photo-1579165466741-7f35a4755657?auto=format&fit=crop&q=80&w=800',
-    description: 'A comprehensive health checkup designed to screen for common health conditions. Ideal for adults aged 25+ years for early detection and prevention of lifestyle diseases.',
-    testsIncluded: ['Complete Blood Count (CBC)', 'Diabetes Screen (HbA1c, Fasting Glucose)', 'Liver Function Test (LFT)', 'Lipid Profile', 'Thyroid Profile (T3, T4, TSH)', 'Kidney Function Test (KFT)', 'Vitamin D Total', 'Vitamin B12', 'Iron Studies', 'Urine Routine'],
-    preparation: ['Fasting of 10-12 hours is strictly required.', 'Drink water to stay hydrated.', 'Do not take morning medications before sample collection unless advised by your doctor.'],
-    location: 'Apollo Diagnostics, Indiranagar, Bangalore'
-  },
-  { 
-    id: 'lt2', 
-    title: 'Apollo Full Body Checkup - Essential', 
-    type: 'Package', 
-    testCount: 56, 
-    tags: ['Eligible for 100% Money Back'], 
-    price: 1479, 
-    originalPrice: 3697, 
-    discount: 60, 
-    tat: '24 hrs', 
-    category: 'Full Body', 
-    image: 'https://images.unsplash.com/photo-1579684385127-1ef15d508118?auto=format&fit=crop&q=80&w=800',
-    description: 'Essential health screening covering vital body functions. Recommended annually for checking general health status.',
-    testsIncluded: ['Complete Haemogram', 'Fasting Blood Sugar', 'Lipid Profile', 'Liver Function Test (Basic)', 'Kidney Function Test (Basic)', 'TSH'],
-    preparation: ['Fasting of 8-10 hours required.', 'Avoid alcohol 24 hours prior to the test.'],
-    location: 'Apollo Diagnostics, Koramangala, Bangalore'
-  },
-  { 
-    id: 'lt3', 
-    title: 'Comprehensive Gold Full Body Checkup', 
-    type: 'Package', 
-    testCount: 71, 
-    tags: ['Popular'], 
-    price: 2249, 
-    originalPrice: 5623, 
-    discount: 60, 
-    tat: '18 hrs', 
-    category: 'Full Body', 
-    image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&q=80&w=800',
-    description: 'An extensive package that covers all major organs and vital nutrients. Suitable for individuals with a family history of diabetes or heart disease.',
-    testsIncluded: ['CBC with ESR', 'Diabetes Screening', 'Lipid Profile Extended', 'Liver Function Test Complete', 'Renal Function Test', 'Thyroid Profile', 'Calcium', 'Uric Acid'],
-    preparation: ['10-12 hours fasting required.', 'Morning sample collection preferred.'],
-    location: 'MediCare Labs, Whitefield, Bangalore'
-  },
-  { 
-    id: 'lt4', 
-    title: 'Thyroid Profile (T3, T4, TSH)', 
-    type: 'Test', 
-    testCount: 3, 
-    price: 499, 
-    originalPrice: 1000, 
-    discount: 50, 
-    tat: '6 hrs', 
-    category: 'Thyroid', 
-    image: 'https://images.unsplash.com/photo-1606618779553-9562433f014e?auto=format&fit=crop&q=80&w=800',
-    description: 'Measures the level of thyroid hormones in your blood to check the function of your thyroid gland.',
-    testsIncluded: ['Triiodothyronine (T3)', 'Thyroxine (T4)', 'Thyroid Stimulating Hormone (TSH)'],
-    preparation: ['No fasting required.', 'Sample can be given at any time of the day.'],
-    location: 'Thyrocare, Jayanagar, Bangalore'
-  },
-  { 
-    id: 'lt5', 
-    title: 'Lipid Profile Test', 
-    type: 'Test', 
-    testCount: 8, 
-    tags: ['Fasting Required'], 
-    price: 829, 
-    originalPrice: 2072, 
-    discount: 60, 
-    tat: '8 hrs', 
-    category: 'Heart', 
-    image: 'https://images.unsplash.com/photo-1628348068343-c6a848d2b6dd?auto=format&fit=crop&q=80&w=800',
-    description: 'A complete cholesterol test to assess the risk of heart disease.',
-    testsIncluded: ['Total Cholesterol', 'HDL Cholesterol', 'LDL Cholesterol', 'VLDL Cholesterol', 'Triglycerides', 'Total/HDL Ratio'],
-    preparation: ['10-12 hours fasting is mandatory.', 'Plain water is allowed.'],
-    location: 'Orange Health Labs, HSR Layout, Bangalore'
-  },
-  { 
-    id: 'lt6', 
-    title: 'CBC Test (Complete Blood Count)', 
-    type: 'Test', 
-    testCount: 30, 
-    price: 419, 
-    originalPrice: 1047, 
-    discount: 60, 
-    tat: '4 hrs', 
-    category: 'Blood Studies', 
-    image: 'https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?auto=format&fit=crop&q=80&w=800',
-    description: 'Evaluates overall health and detects a wide range of disorders, including anemia, infection and leukemia.',
-    testsIncluded: ['Hemoglobin', 'RBC Count', 'WBC Count', 'Platelet Count', 'MCV, MCH, MCHC', 'Differential Count'],
-    preparation: ['No fasting required.'],
-    location: 'Dr. Lal PathLabs, MG Road, Bangalore'
-  },
-  { 
-    id: 'lt7', 
-    title: 'HbA1c Test (Hemoglobin A1c)', 
-    type: 'Test', 
-    testCount: 3, 
-    price: 649, 
-    originalPrice: 1623, 
-    discount: 60, 
-    tat: '6 hrs', 
-    category: 'Diabetes', 
-    image: 'https://images.unsplash.com/photo-1576091160550-21871bf2300b?auto=format&fit=crop&q=80&w=800',
-    description: 'Average blood sugar levels over the past 3 months. Gold standard for monitoring diabetes control.',
-    testsIncluded: ['HbA1c', 'Average Blood Glucose'],
-    preparation: ['No fasting required.'],
-    location: 'Metropolis Healthcare, Banashankari, Bangalore'
-  },
-  { 
-    id: 'lt8', 
-    title: 'Liver Function Test (LFT)', 
-    type: 'Test', 
-    testCount: 11, 
-    price: 800, 
-    originalPrice: 1600, 
-    discount: 50, 
-    tat: '12 hrs', 
-    category: 'Liver', 
-    image: 'https://images.unsplash.com/photo-1530026405186-ed1f139313f8?auto=format&fit=crop&q=80&w=800',
-    description: 'Screening test to check liver health and detect liver damage.',
-    testsIncluded: ['Bilirubin (Total, Direct, Indirect)', 'SGOT (AST)', 'SGPT (ALT)', 'Alkaline Phosphatase', 'Total Protein', 'Albumin', 'Globulin'],
-    preparation: ['No fasting required, but avoid heavy meals before test.'],
-    location: 'Aster Labs, Hebbal, Bangalore'
-  },
-  { 
-    id: 'lt9', 
-    title: 'Kidney Function Test (KFT)', 
-    type: 'Test', 
-    testCount: 9, 
-    price: 950, 
-    originalPrice: 1900, 
-    discount: 50, 
-    tat: '12 hrs', 
-    category: 'Kidney', 
-    image: 'https://images.unsplash.com/photo-1559757175-7b2713a6b527?auto=format&fit=crop&q=80&w=800',
-    description: 'Evaluates how well the kidneys are working.',
-    testsIncluded: ['Blood Urea Nitrogen', 'Serum Creatinine', 'Uric Acid', 'Calcium', 'Sodium', 'Potassium', 'Chloride'],
-    preparation: ['No specific preparation required.'],
-    location: 'Suburban Diagnostics, Malleshwaram, Bangalore'
-  },
-];
-
-const LAB_CATEGORIES = ['All', 'Full Body', 'Diabetes', 'Heart', 'Thyroid', 'Blood Studies', 'Women\'s Health', 'Senior Citizen'];
-
-// --- PHARMACY MOCK DATA ---
+// --- PHARMACY MOCK DATA (Will be loaded from API) ---
 interface Medicine {
   id: string;
   name: string;
@@ -293,19 +99,7 @@ interface Medicine {
   description: string;
 }
 
-const MEDICINES: Medicine[] = [
-  { id: 'med1', name: 'Dolo 650mg', type: 'Tablet', price: 30, originalPrice: 40, discount: 25, image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&q=80&w=800', category: 'Tablets', manufacturer: 'Micro Labs Ltd', dosage: '650mg', packSize: '15 Tablets', description: 'Used for fever and mild to moderate pain relief.' },
-  { id: 'med2', name: 'Benadryl Cough Syrup', type: 'Syrup', price: 110, originalPrice: 125, discount: 12, image: 'https://images.unsplash.com/photo-1603555501671-3f938d01f92e?auto=format&fit=crop&q=80&w=800', category: 'Syrups', manufacturer: 'Johnson & Johnson', dosage: '150ml', packSize: '1 Bottle', description: 'Relieves cough, congestion, and throat irritation.' },
-  { id: 'med3', name: 'Volini Gel', type: 'Ointment', price: 145, originalPrice: 160, discount: 9, image: 'https://images.unsplash.com/photo-1626968037373-c4eb9d042299?auto=format&fit=crop&q=80&w=800', category: 'Creams & Ointments', manufacturer: 'Sun Pharma', dosage: '30g', packSize: '1 Tube', description: 'Pain relief gel for joint, back, neck, and shoulder pain.' },
-  { id: 'med4', name: 'Seven Seas Cod Liver Oil', type: 'Capsule', price: 320, originalPrice: 400, discount: 20, image: 'https://images.unsplash.com/photo-1550572017-ed108bc2773d?auto=format&fit=crop&q=80&w=800', category: 'Supplements', manufacturer: 'Merck', dosage: '300mg', packSize: '100 Capsules', description: 'Rich source of Omega-3 and Vitamin D for heart and immunity.' },
-  { id: 'med5', name: 'Dettol Antiseptic', type: 'Liquid', price: 180, originalPrice: 200, discount: 10, image: 'https://images.unsplash.com/photo-1584017911766-d451b3d0e843?auto=format&fit=crop&q=80&w=800', category: 'First Aid', manufacturer: 'Reckitt', dosage: '500ml', packSize: '1 Bottle', description: 'Disinfectant liquid for first aid and surface cleaning.' },
-  { id: 'med6', name: 'Refresh Tears', type: 'Drops', price: 480, originalPrice: 550, discount: 12, image: 'https://images.unsplash.com/photo-1588625902096-747209930605?auto=format&fit=crop&q=80&w=800', category: 'Eye Drops', manufacturer: 'Allergan', dosage: '10ml', packSize: '1 Bottle', description: 'Lubricant eye drops for dry and irritated eyes.' },
-  { id: 'med7', name: 'Hansaplast Bandage', type: 'Bandage', price: 50, originalPrice: 60, discount: 16, image: 'https://images.unsplash.com/photo-1599407333919-61994e773703?auto=format&fit=crop&q=80&w=800', category: 'First Aid', manufacturer: 'Beiersdorf', dosage: 'Standard', packSize: '20 Strips', description: 'Waterproof antiseptic bandages for minor cuts and wounds.' },
-  { id: 'med8', name: 'Otrivin Nasal Drops', type: 'Drops', price: 65, originalPrice: 75, discount: 13, image: 'https://images.unsplash.com/photo-1631549916768-4119b2d3f9e2?auto=format&fit=crop&q=80&w=800', category: 'Ear & Nasal Drops', manufacturer: 'GSK', dosage: '10ml', packSize: '1 Bottle', description: 'Relieves blocked nose due to cold and sinusitis.' },
-  { id: 'med9', name: 'Shelcal 500', type: 'Tablet', price: 120, originalPrice: 140, discount: 14, image: 'https://images.unsplash.com/photo-1471864190281-a93a3070b6de?auto=format&fit=crop&q=80&w=800', category: 'Supplements', manufacturer: 'Torrent Pharma', dosage: '500mg', packSize: '15 Tablets', description: 'Calcium supplement with Vitamin D3 for bone health.' },
-];
-
-// --- HEALTH REPORTS MOCK DATA ---
+// --- HEALTH REPORTS MOCK DATA (Will be loaded from API) ---
 interface HealthReport {
   id: string;
   title: string;
@@ -315,19 +109,6 @@ interface HealthReport {
   fileType: 'PDF' | 'JPG';
   fileSize: string;
 }
-
-const HEALTH_REPORTS: HealthReport[] = [
-  { id: 'r1', title: 'Complete Blood Count (CBC)', type: 'Lab Report', date: '28 Jan, 2024', doctorOrLab: 'Apollo Diagnostics', fileType: 'PDF', fileSize: '1.2 MB' },
-  { id: 'r2', title: 'General Viral Fever Prescription', type: 'Prescription', date: '25 Jan, 2024', doctorOrLab: 'Dr. Robert Smith', fileType: 'PDF', fileSize: '450 KB' },
-  { id: 'r3', title: 'Chest X-Ray PA View', type: 'Medical Report', date: '10 Dec, 2023', doctorOrLab: 'City Imaging Center', fileType: 'JPG', fileSize: '3.5 MB' },
-  { id: 'r4', title: 'Lipid Profile Test', type: 'Lab Report', date: '15 Nov, 2023', doctorOrLab: 'Orange Health Labs', fileType: 'PDF', fileSize: '1.8 MB' },
-  { id: 'r5', title: 'Dental Root Canal Plan', type: 'Prescription', date: '05 Nov, 2023', doctorOrLab: 'Dr. Susan Lee', fileType: 'PDF', fileSize: '800 KB' },
-  { id: 'r6', title: 'MRI Scan - Knee', type: 'Medical Report', date: '20 Oct, 2023', doctorOrLab: 'City Imaging Center', fileType: 'JPG', fileSize: '12 MB' },
-  { id: 'r7', title: 'Thyroid Function Test', type: 'Lab Report', date: '12 Oct, 2023', doctorOrLab: 'Thyrocare', fileType: 'PDF', fileSize: '1.5 MB' },
-  { id: 'r8', title: 'Follow-up Prescription', type: 'Prescription', date: '30 Sep, 2023', doctorOrLab: 'Dr. Emily Chen', fileType: 'PDF', fileSize: '320 KB' },
-];
-
-const REPORT_FILTERS = ['All', 'Lab Report', 'Prescription', 'Medical Report'];
 
 // --- TYPES ---
 interface ChatMessage {
@@ -380,30 +161,20 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ onLogout }) => {
   const [isTyping, setIsTyping] = useState(false);
   const [viewAllSymptomsOpen, setViewAllSymptomsOpen] = useState(false);
   
-  // Data States
-  const [myAppointments, setMyAppointments] = useState<Appointment[]>([
-    { 
-      id: 'apt_001', 
-      doctorId: 'd1', 
-      doctorName: 'Dr. Sarah Mitchell', 
-      doctorImage: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=2070&auto=format&fit=crop', 
-      specialty: 'Geneticist', 
-      hospital: 'Apollo Hospital', 
-      date: 'Today', 
-      time: '10:00 AM', 
-      type: 'video', 
-      status: 'Upcoming' 
-    }
-  ]);
-
-  const [paymentHistory, setPaymentHistory] = useState<PaymentReceipt[]>([
-    { transactionId: 'TXN_123456', date: 'Jan 28, 2024', doctorName: 'Dr. James Wilson', amount: 2500, status: 'Success', description: 'Video Consultation' }
-  ]);
-
-  const [recentInteractions] = useState<Interaction[]>([
-    { id: 'int_1', doctorName: 'Dr. Robert Smith', doctorImage: 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?q=80&w=2070&auto=format&fit=crop', date: 'Yesterday', type: 'Chat', summary: 'Follow up on fever symptoms' },
-    { id: 'int_2', doctorName: 'Dr. Susan Lee', doctorImage: 'https://images.unsplash.com/photo-1594824476967-48c8b964273f?q=80&w=1974&auto=format&fit=crop', date: '25 Jan, 2024', type: 'Video Call', summary: 'Dental checkup consultation' },
-  ]);
+  // Data States - Load from API
+  const [myAppointments, setMyAppointments] = useState<Appointment[]>([]);
+  const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
+  const [labTests, setLabTests] = useState<LabTest[]>([]);
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [healthReports, setHealthReports] = useState<HealthReport[]>([]);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentReceipt[]>([]);
+  const [recentInteractions, setRecentInteractions] = useState<Interaction[]>([]);
+  
+  // Loading states
+  const [isLoadingDoctors, setIsLoadingDoctors] = useState(false);
+  const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
+  const [isLoadingLabTests, setIsLoadingLabTests] = useState(false);
+  const [isLoadingMedicines, setIsLoadingMedicines] = useState(false);
 
   // Booking Modal State
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
@@ -442,6 +213,82 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ onLogout }) => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, isTyping, isChatOpen]);
 
+  // Load all data from API
+  useEffect(() => {
+    const loadDoctors = async () => {
+      try {
+        setIsLoadingDoctors(true);
+        const response = await api.doctors.getAll();
+        setAllDoctors(response.data || []);
+      } catch (error) {
+        console.error('Failed to load doctors:', error);
+      } finally {
+        setIsLoadingDoctors(false);
+      }
+    };
+
+    const loadAppointments = async () => {
+      try {
+        setIsLoadingAppointments(true);
+        const response = await api.appointments.getMyAppointments();
+        setMyAppointments(response.data || []);
+      } catch (error) {
+        console.error('Failed to load appointments:', error);
+      } finally {
+        setIsLoadingAppointments(false);
+      }
+    };
+
+    const loadLabTests = async () => {
+      try {
+        setIsLoadingLabTests(true);
+        const response = await api.labTests.getAll();
+        setLabTests(response.data || []);
+      } catch (error) {
+        console.error('Failed to load lab tests:', error);
+      } finally {
+        setIsLoadingLabTests(false);
+      }
+    };
+
+    const loadMedicines = async () => {
+      try {
+        setIsLoadingMedicines(true);
+        const response = await api.medicines.getAll();
+        setMedicines(response.data || []);
+      } catch (error) {
+        console.error('Failed to load medicines:', error);
+      } finally {
+        setIsLoadingMedicines(false);
+      }
+    };
+
+    const loadPaymentHistory = async () => {
+      try {
+        const response = await api.payments.getHistory();
+        setPaymentHistory(response.data || []);
+      } catch (error) {
+        console.error('Failed to load payment history:', error);
+      }
+    };
+
+    const loadHealthReports = async () => {
+      try {
+        const response = await api.healthReports.getAll();
+        setHealthReports(response.data || []);
+      } catch (error) {
+        console.error('Failed to load health reports:', error);
+      }
+    };
+
+    loadDoctors();
+    loadAppointments();
+    loadLabTests();
+    loadMedicines();
+    loadPaymentHistory();
+    loadHealthReports();
+  }, []);
+
   const sidebarItems = [
     { id: 'overview', icon: LayoutGrid, label: 'Overview' },
     { id: 'book-doctor', icon: Stethoscope, label: 'Book Doctor' },
@@ -461,7 +308,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ onLogout }) => {
   ];
 
   // --- FILTERED DOCTORS ---
-  const filteredDoctors = ALL_DOCTORS.filter(doc => {
+  const filteredDoctors = allDoctors.filter(doc => {
     const matchesSpecialty = selectedSpecialty === 'All' || doc.specialty === selectedSpecialty;
     const matchesSearch = doc.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           doc.specialty.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -470,21 +317,21 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ onLogout }) => {
   });
 
   // --- FILTERED LAB TESTS ---
-  const filteredLabTests = LAB_TESTS.filter(test => {
+  const filteredLabTests = labTests.filter(test => {
       const matchesCategory = selectedLabCategory === 'All' || test.category === selectedLabCategory;
       const matchesSearch = test.title.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
   });
 
   // --- FILTERED MEDICINES ---
-  const filteredMedicines = MEDICINES.filter(med => {
+  const filteredMedicines = medicines.filter(med => {
       const matchesSearch = med.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             med.manufacturer.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesSearch;
   });
 
   // --- FILTERED REPORTS ---
-  const filteredReports = HEALTH_REPORTS.filter(report => {
+  const filteredReports = healthReports.filter(report => {
       const matchesFilter = reportFilter === 'All' || report.type === reportFilter;
       const matchesSearch = report.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             report.doctorOrLab.toLowerCase().includes(searchQuery.toLowerCase());
@@ -498,7 +345,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ onLogout }) => {
 
   const getCartTotal = () => {
       return cart.reduce((total, id) => {
-          const test = LAB_TESTS.find(t => t.id === id);
+          const test = labTests.find(t => t.id === id);
           return total + (test?.price || 0);
       }, 0);
   };
@@ -661,7 +508,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ onLogout }) => {
         id: (Date.now() + 2).toString(),
         sender: 'bot',
         type: 'doctor-recommendation',
-        doctors: MOCK_DOCTORS['General Physician'] || ALL_DOCTORS.slice(0, 2), 
+        doctors: allDoctors.filter(d => d.specialty === 'General Physician').slice(0, 2) || allDoctors.slice(0, 2),
         categoryRecommended: 'General Physician'
       };
 
