@@ -1,45 +1,23 @@
 import express from 'express';
-import { protect, authorize } from '../middleware/auth.js';
-import User from '../models/User.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// @route   GET /api/users/profile
-// @desc    Get current user profile
-// @access  Private
-router.get('/profile', protect, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    res.json({ success: true, data: user });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+router.get('/', authMiddleware, asyncHandler(async (req, res) => {
+  res.json({ message: 'Get all users' });
+}));
 
-// @route   PUT /api/users/profile
-// @desc    Update user profile
-// @access  Private
-router.put('/profile', protect, async (req, res) => {
-  try {
-    const allowedFields = ['name', 'phone', 'profileImage', 'dateOfBirth', 'gender', 'bloodType', 'address', 'emergencyContact'];
-    const updates = {};
-    
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
-      }
-    });
-    
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
-      updates,
-      { new: true, runValidators: true }
-    );
-    
-    res.json({ success: true, data: user });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+router.get('/:id', asyncHandler(async (req, res) => {
+  res.json({ message: 'Get user by ID' });
+}));
+
+router.put('/:id', authMiddleware, asyncHandler(async (req, res) => {
+  res.json({ message: 'Update user' });
+}));
+
+router.delete('/:id', authMiddleware, asyncHandler(async (req, res) => {
+  res.json({ message: 'Delete user' });
+}));
 
 export default router;

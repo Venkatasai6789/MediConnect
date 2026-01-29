@@ -1,64 +1,16 @@
 import mongoose from 'mongoose';
 
 const chatSchema = new mongoose.Schema({
-  conversationId: {
-    type: String,
-    required: true,
-    index: true
-  },
-  senderId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  receiverId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  message: {
-    type: String,
-    required: true
-  },
-  messageType: {
-    type: String,
-    enum: ['text', 'image', 'file', 'prescription', 'report'],
-    default: 'text'
-  },
-  attachmentUrl: String,
-  attachmentType: String,
-  isRead: {
-    type: Boolean,
-    default: false
-  },
-  readAt: Date,
-  appointmentId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Appointment'
-  },
-  relatedDocument: {
-    documentType: String,
-    documentId: mongoose.Schema.Types.ObjectId
-  },
-  reactions: [{
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    emoji: String
+  conversationId: { type: String, required: true, unique: true },
+  participantIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  messages: [{
+    senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    message: String,
+    timestamp: { type: Date, default: Date.now }
   }],
-  deletedAt: Date,
-  editedAt: Date,
-  editHistory: [{
-    content: String,
-    editedAt: Date
-  }]
-}, {
-  timestamps: true
+  lastMessage: String,
+  lastMessageTime: Date,
+  createdAt: { type: Date, default: Date.now }
 });
 
-chatSchema.index({ conversationId: 1, createdAt: -1 });
-
-const Chat = mongoose.model('Chat', chatSchema);
-
-export default Chat;
+export default mongoose.model('Chat', chatSchema);
